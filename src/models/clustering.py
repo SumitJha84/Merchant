@@ -12,6 +12,10 @@ Differentiators:
 - Named clusters aligned to business segments
 """
 
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # suppress TensorFlow log noise
+os.environ["CUDA_VISIBLE_DEVICES"]  = "-1"  # disable GPU for TF (not needed)
+
 import numpy as np
 import pandas as pd
 import warnings
@@ -22,7 +26,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 from umap import UMAP
 import joblib
-import os
 
 os.makedirs("data/processed", exist_ok=True)
 os.makedirs("models", exist_ok=True)
@@ -55,13 +58,16 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
 # ── UMAP reduction ────────────────────────────────────────────────────────────
-print("Running UMAP...")
+print("Running UMAP... (this takes ~30s)")
 reducer = UMAP(
     n_components=2,
-    n_neighbors=15,
+    n_neighbors=10,       # reduced from 15 — faster, still captures structure
     min_dist=0.1,
     random_state=SEED,
     metric="euclidean",
+    low_memory=True,      # trades some quality for speed on large datasets
+    n_jobs=1,             # set to -1 for multi-core if numba supports it
+    verbose=False,
 )
 embedding = reducer.fit_transform(X_scaled)
 df["umap_x"] = embedding[:, 0].round(4)

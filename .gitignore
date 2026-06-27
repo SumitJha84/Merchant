@@ -1,0 +1,29 @@
+# Data
+data/raw/*.csv
+data/processed/*.csv
+data/outputs/*.csv
+
+# Models
+models/*.pkl
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Build helpers (not needed in repo)
+fix_app.py
+patch_app.py
+patch2.py
+build_dashboard.py
+assemble_app.py
+dashboard/app_raw.txt
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
