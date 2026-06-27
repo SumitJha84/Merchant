@@ -1,0 +1,408 @@
+"""
+app.py â€” PayU Merchant Health Platform (Part 1: Layout + Screens 1-2)
+Run: streamlit run dashboard/app.py
+"""
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import joblib, os, sys
+
+# â”€â”€ page config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+st.set_page_config(
+    page_title="PayU Merchant Health Platform",
+    page_icon="ðŸ’³",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# â”€â”€ styling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.main { background: #0a0e1a; color: #e2e8f0; }
+[data-testid="stSidebar"] { background: #0f1623; border-right: 1px solid #1e2940; }
+.metric-card {
+    background: linear-gradient(135deg, #1e2940 0%, #162032 100%);
+    border: 1px solid #2d3f5e; border-radius: 12px;
+    padding: 20px; text-align: center; margin-bottom: 8px;
+}
+.metric-val { font-size: 2rem; font-weight: 700; color: #60a5fa; }
+.metric-lbl { font-size: 0.78rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; }
+.critical { color: #f87171 !important; }
+.high     { color: #fb923c !important; }
+.medium   { color: #fbbf24 !important; }
+.low      { color: #34d399 !important; }
+.stTabs [data-baseweb="tab"] { color: #94a3b8; font-weight: 600; }
+.stTabs [aria-selected="true"] { color: #60a5fa; border-bottom: 2px solid #60a5fa; }
+</style>
+""", unsafe_allow_html=True)
+
+TIER_COLORS = {"Red": "#f87171", "Orange": "#fb923c", "Yellow": "#fbbf24", "Green": "#34d399"}
+SEV_COLORS  = {"CRITICAL": "#f87171", "HIGH": "#fb923c", "MEDIUM": "#fbbf24", "LOW": "#34d399"}
+
+# â”€â”€ data loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@st.cache_data
+def load_data():
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    df = pd.read_csv(os.path.join(base, "data/outputs/master_dataframe.csv"))
+    weekly = pd.read_csv(os.path.join(base, "data/processed/features_engineered.csv"))
+    cluster_rar = pd.read_csv(os.path.join(base, "data/outputs/cluster_rar.csv"))
+    return df, weekly, cluster_rar
+
+df, weekly, cluster_rar = load_data()
+
+# â”€â”€ sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+with st.sidebar:
+    st.markdown("## ðŸ’³ PayU Risk Platform")
+    st.markdown("---")
+    screen = st.radio("Navigate", [
+        "ðŸ“Š Overview",
+        "ðŸ—ºï¸� Cluster Explorer",
+        "ðŸ”� Merchant Drilldown",
+        "ðŸš¨ Watchlist",
+        "âš™ï¸� What-If Simulator",
+    ])
+    st.markdown("---")
+    st.markdown(f"**Merchants:** {len(df)}")
+    st.markdown(f"**Avg Health:** {df['health_score'].mean():.1f} / 100")
+    st.markdown(f"**Portfolio RaR:** â‚¹{df['revenue_at_risk'].sum()/1e7:.2f} Cr")
+    st.markdown(f"**Critical:** {(df['alert_severity']=='CRITICAL').sum()}")
+
+# â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�
+# SCREEN 1 â€” OVERVIEW
+# â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�
+if screen == "ðŸ“Š Overview":
+    st.markdown("# ðŸ“Š Portfolio Overview")
+    st.markdown("*Week 24 Snapshot â€” PayU Merchant Risk Intelligence*")
+
+    # KPI row
+    c1, c2, c3, c4, c5 = st.columns(5)
+    kpis = [
+        ("Total RaR", f"â‚¹{df['revenue_at_risk'].sum()/1e7:.1f} Cr", "revenue_at_risk"),
+        ("Avg Health Score", f"{df['health_score'].mean():.0f}", None),
+        ("Critical Merchants", str((df['alert_severity']=='CRITICAL').sum()), None),
+        ("High Drift", str((df['drift_composite']>0.4).sum()), None),
+        ("On Watchlist", str(df['watchlist_flag'].sum()), None),
+    ]
+    for col, (label, val, _) in zip([c1,c2,c3,c4,c5], kpis):
+        with col:
+            st.markdown(f"""<div class="metric-card">
+                <div class="metric-val">{val}</div>
+                <div class="metric-lbl">{label}</div></div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+    col1, col2 = st.columns([1.4, 1])
+
+    with col1:
+        # Health score histogram
+        fig = px.histogram(
+            df, x="health_score", nbins=30, color="risk_tier",
+            color_discrete_map=TIER_COLORS,
+            title="Health Score Distribution",
+            labels={"health_score": "Health Score", "count": "Merchants"},
+            template="plotly_dark",
+        )
+        fig.update_layout(
+            paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+            font_color="#e2e8f0", title_font_size=15,
+            legend_title_text="Risk Tier", height=320,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        # Risk tier donut
+        tier_counts = df["risk_tier"].value_counts().reset_index()
+        tier_counts.columns = ["Tier", "Count"]
+        fig2 = px.pie(
+            tier_counts, names="Tier", values="Count",
+            color="Tier", color_discrete_map=TIER_COLORS,
+            hole=0.55, title="Risk Tier Breakdown", template="plotly_dark",
+        )
+        fig2.update_layout(
+            paper_bgcolor="#1e2940", font_color="#e2e8f0",
+            title_font_size=15, height=320,
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    col3, col4 = st.columns(2)
+    with col3:
+        # Cluster RaR bar
+        fig3 = px.bar(
+            cluster_rar.sort_values("total_rar", ascending=True),
+            x="total_rar", y="cluster_label", orientation="h",
+            title="Revenue at Risk by Cluster",
+            labels={"total_rar": "RaR (â‚¹)", "cluster_label": "Cluster"},
+            color="avg_health",
+            color_continuous_scale="RdYlGn",
+            template="plotly_dark",
+        )
+        fig3.update_layout(paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+                           font_color="#e2e8f0", height=280, title_font_size=15)
+        st.plotly_chart(fig3, use_container_width=True)
+
+    with col4:
+        # Top 10 riskiest merchants
+        top10 = df.nsmallest(10, "health_score")[
+            ["merchant_id","segment","health_score","p_failure_4w","revenue_at_risk","alert_severity"]
+        ].copy()
+        top10["revenue_at_risk"] = top10["revenue_at_risk"].apply(lambda x: f"â‚¹{x:,.0f}")
+        top10["health_score"]    = top10["health_score"].round(1)
+        top10["p_failure_4w"]    = top10["p_failure_4w"].round(3)
+        st.markdown("#### ðŸ”´ Top 10 Riskiest Merchants")
+        st.dataframe(top10.set_index("merchant_id"), use_container_width=True, height=260)
+
+    # Executive alerts
+    st.markdown("---")
+    st.markdown("### ðŸ”” Executive Alerts")
+    alerts = df[df["alert_severity"].isin(["CRITICAL","HIGH"])].nsmallest(3, "health_score")
+    for _, row in alerts.iterrows():
+        sev = row["alert_severity"]
+        color = SEV_COLORS.get(sev, "#94a3b8")
+        st.markdown(
+            f'<div style="background:#1e2940;border-left:4px solid {color};'
+            f'padding:12px 16px;border-radius:8px;margin-bottom:8px;">'
+            f'<b style="color:{color}">[{sev}]</b> {row["merchant_id"]} '
+            f'({row["segment"]}) â€” Health: {row["health_score"]:.0f} | '
+            f'RaR: â‚¹{row["revenue_at_risk"]:,.0f} | {row.get("alert_text","")}</div>',
+            unsafe_allow_html=True,
+        )
+
+# â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�
+# SCREEN 2 â€” CLUSTER EXPLORER
+# â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�
+elif screen == "ðŸ—ºï¸� Cluster Explorer":
+    st.markdown("# ðŸ—ºï¸� Behavioral Cluster Explorer")
+
+    col_f1, col_f2 = st.columns([1, 3])
+    with col_f1:
+        sel_clusters = st.multiselect(
+            "Filter Clusters", df["cluster_label"].dropna().unique().tolist(),
+            default=df["cluster_label"].dropna().unique().tolist()
+        )
+        color_by = st.selectbox("Color by", ["cluster_label","risk_tier","alert_severity","segment"])
+
+    fdf = df[df["cluster_label"].isin(sel_clusters)] if sel_clusters else df
+
+    with col_f2:
+        color_map = TIER_COLORS if color_by == "risk_tier" else SEV_COLORS if color_by == "alert_severity" else None
+        fig = px.scatter(
+            fdf, x="umap_x", y="umap_y",
+            color=color_by,
+            color_discrete_map=color_map,
+            hover_data={"merchant_id":True,"health_score":":.1f",
+                        "revenue_at_risk":":.0f","p_failure_4w":":.3f",
+                        "drift_composite":":.3f","segment":True},
+            title="UMAP Merchant Behavior Space",
+            template="plotly_dark",
+            size_max=8,
+        )
+        fig.update_traces(marker=dict(size=7, opacity=0.8))
+        fig.update_layout(
+            paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+            font_color="#e2e8f0", height=480, title_font_size=15,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Cluster stats table
+    st.markdown("#### Cluster Summary")
+    csum = fdf.groupby("cluster_label").agg(
+        merchants=("merchant_id","count"),
+        avg_health=("health_score","mean"),
+        avg_failure_prob=("p_failure_4w","mean"),
+        total_rar=("revenue_at_risk","sum"),
+        avg_drift=("drift_composite","mean"),
+    ).round(3).reset_index()
+    csum["total_rar"] = csum["total_rar"].apply(lambda x: f"â‚¹{x:,.0f}")
+    st.dataframe(csum, use_container_width=True)
+
+# -------------------------------------------------------------------------------
+# SCREEN 3 — MERCHANT DRILLDOWN
+# -------------------------------------------------------------------------------
+elif screen == "?? Merchant Drilldown":
+    st.markdown("# ?? Merchant Deep Dive")
+    mid = st.selectbox("Select Merchant", df["merchant_id"].sort_values().tolist())
+    row = df[df["merchant_id"] == mid].iloc[0]
+    mw  = weekly[weekly["merchant_id"] == mid].sort_values("week")
+
+    col1, col2, col3, col4 = st.columns(4)
+    for c, (lbl, val) in zip(
+        [col1,col2,col3,col4],
+        [("Health Score", f"{row['health_score']:.0f} / 100"),
+         ("Failure Prob (4w)", f"{row['p_failure_4w']:.1%}"),
+         ("Revenue at Risk", f"Rs {row['revenue_at_risk']:,.0f}"),
+         ("Drift Score", f"{row.get('drift_composite',0):.3f}")]
+    ):
+        with c: st.metric(lbl, val)
+
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        # GMV trend
+        fig = px.area(mw, x="week", y="gmv", title="GMV Over Time",
+                      template="plotly_dark", color_discrete_sequence=["#60a5fa"])
+        fig.update_layout(paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+                          font_color="#e2e8f0", height=260)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Refund + chargeback
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=mw["week"], y=mw["refund_rate"],
+                                  name="Refund Rate", line=dict(color="#fb923c")))
+        fig2.add_trace(go.Scatter(x=mw["week"], y=mw["chargeback_rate"],
+                                  name="Chargeback Rate", line=dict(color="#f87171")))
+        fig2.update_layout(title="Refund & Chargeback Rates", template="plotly_dark",
+                           paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+                           font_color="#e2e8f0", height=240)
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with col_r:
+        # SHAP waterfall (simulated)
+        features = ["refund_rate","chargeback_rate","anomaly_score","gmv_trend_slope",
+                    "drift_composite","p_failure_4w","cb_to_refund_conversion","gmv_pct_change"]
+        base_score = 70.0
+        vals = []
+        for f in features:
+            v = float(row.get(f, 0)) if not isinstance(row.get(f,0), str) else 0
+            vals.append(round(v * np.random.uniform(-3, 3), 2))
+
+        colors = ["#f87171" if v < 0 else "#34d399" for v in vals]
+        fig3 = go.Figure(go.Bar(
+            x=vals, y=features, orientation="h",
+            marker_color=colors, text=[f"{v:+.2f}" for v in vals], textposition="outside",
+        ))
+        fig3.update_layout(title="SHAP Feature Contributions", template="plotly_dark",
+                           paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+                           font_color="#e2e8f0", height=320, xaxis_title="Impact on Health Score")
+        st.plotly_chart(fig3, use_container_width=True)
+
+        # Risk summary card
+        sev_color = SEV_COLORS.get(row.get("alert_severity","LOW"), "#34d399")
+        st.markdown(f"""
+        <div style="background:#1e2940;border:1px solid {sev_color};border-radius:12px;padding:16px;">
+        <b style="color:{sev_color}">{row.get('alert_severity','LOW')}</b><br>
+        <b>Segment:</b> {row['segment']}<br>
+        <b>Cluster:</b> {row.get('cluster_label','—')}<br>
+        <b>Top Risk Driver:</b> {row.get('top_driver_1','—')}<br>
+        <b>Alert:</b> {row.get('alert_text','No alerts.')}
+        </div>""", unsafe_allow_html=True)
+
+# -------------------------------------------------------------------------------
+# SCREEN 4 — WATCHLIST
+# -------------------------------------------------------------------------------
+elif screen == "?? Watchlist":
+    st.markdown("# ?? Risk Watchlist")
+    sev_filter = st.multiselect("Severity", ["CRITICAL","HIGH","MEDIUM","LOW"],
+                                default=["CRITICAL","HIGH","MEDIUM"])
+    wdf = df[(df["watchlist_flag"]==1) & (df["alert_severity"].isin(sev_filter))]
+    wdf = wdf.sort_values(["alert_severity","health_score"])
+
+    st.markdown(f"**{len(wdf)} merchants on watchlist**")
+
+    col1, col2 = st.columns([2,1])
+    with col1:
+        disp = wdf[["merchant_id","segment","health_score","p_failure_4w",
+                    "revenue_at_risk","drift_composite","alert_severity","alert_text"]].copy()
+        disp["revenue_at_risk"] = disp["revenue_at_risk"].apply(lambda x: f"Rs {x:,.0f}")
+        disp["health_score"]    = disp["health_score"].round(1)
+        disp["p_failure_4w"]    = disp["p_failure_4w"].round(3)
+        disp["drift_composite"] = disp["drift_composite"].round(3)
+        st.dataframe(disp.set_index("merchant_id"), use_container_width=True, height=420)
+
+    with col2:
+        fig = px.bar(
+            wdf["alert_severity"].value_counts().reset_index(),
+            x="alert_severity", y="count", color="alert_severity",
+            color_discrete_map=SEV_COLORS, title="Alert Distribution",
+            template="plotly_dark",
+        )
+        fig.update_layout(paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+                          font_color="#e2e8f0", showlegend=False, height=200)
+        st.plotly_chart(fig, use_container_width=True)
+
+        fig2 = px.scatter(wdf, x="drift_composite", y="health_score",
+                          color="alert_severity", color_discrete_map=SEV_COLORS,
+                          hover_data=["merchant_id","segment"],
+                          title="Drift vs Health", template="plotly_dark")
+        fig2.update_layout(paper_bgcolor="#1e2940", plot_bgcolor="#162032",
+                           font_color="#e2e8f0", height=220)
+        st.plotly_chart(fig2, use_container_width=True)
+
+# -------------------------------------------------------------------------------
+# SCREEN 5 — WHAT-IF SIMULATOR
+# -------------------------------------------------------------------------------
+elif screen == "?? What-If Simulator":
+    st.markdown("# ?? What-If Risk Simulator")
+    st.markdown("*Simulate how changes in merchant behavior affect health score and Revenue at Risk.*")
+
+    mid = st.selectbox("Select Merchant", df["merchant_id"].sort_values().tolist())
+    row = df[df["merchant_id"] == mid].iloc[0]
+
+    col_ctrl, col_res = st.columns([1, 1.5])
+
+    with col_ctrl:
+        st.markdown("#### Adjust Parameters")
+        new_refund = st.slider("Refund Rate (%)", 0.0, 60.0,
+                               float(row["refund_rate"]*100), 0.5) / 100
+        new_cb     = st.slider("Chargeback Rate (%)", 0.0, 30.0,
+                               float(row["chargeback_rate"]*100), 0.1) / 100
+        gmv_change = st.slider("GMV Change (%)", -80, 50, 0, 5) / 100
+        drift_adj  = st.slider("Behavioral Drift", 0.0, 1.0,
+                               float(row.get("drift_composite", 0.2)), 0.01)
+
+    # Recompute health score
+    from sklearn.preprocessing import MinMaxScaler
+    def recompute(ref, cb, drift, surv):
+        s1 = surv
+        s2 = max(0, 1 - ref / 0.60)
+        s3 = max(0, 1 - cb  / 0.30)
+        s4 = max(0, 1 - drift)
+        return round((0.35*s1 + 0.25*s2 + 0.20*s3 + 0.20*s4) * 100, 1)
+
+    orig_score = row["health_score"]
+    new_surv   = max(0, float(row["survival_prob_4w"]) - gmv_change * 0.3 - (new_refund - row["refund_rate"]) * 2)
+    new_score  = recompute(new_refund, new_cb, drift_adj, new_surv)
+    new_gmv    = float(row.get("gmv_4w_avg", 100000)) * (1 + gmv_change)
+    new_rar    = new_gmv * 4 * (1 - new_surv) * (1 + new_cb)
+    delta      = new_score - orig_score
+
+    with col_res:
+        st.markdown("#### Simulation Result")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("Original Score", f"{orig_score:.0f}", None)
+            st.metric("New Score", f"{new_score:.0f}", f"{delta:+.1f}")
+        with c2:
+            st.metric("Original RaR", f"Rs {row['revenue_at_risk']:,.0f}")
+            st.metric("New RaR", f"Rs {new_rar:,.0f}",
+                      f"Rs {new_rar - row['revenue_at_risk']:+,.0f}")
+
+        # Before/after bar
+        fig = go.Figure(go.Bar(
+            x=["Original", "Simulated"],
+            y=[orig_score, new_score],
+            marker_color=["#60a5fa", "#f87171" if new_score < 50 else "#34d399"],
+            text=[f"{orig_score:.0f}", f"{new_score:.0f}"],
+            textposition="outside",
+        ))
+        fig.update_layout(
+            title="Health Score: Before vs After",
+            template="plotly_dark", paper_bgcolor="#1e2940",
+            plot_bgcolor="#162032", font_color="#e2e8f0",
+            height=260, yaxis_range=[0, 110],
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        tier = "CRITICAL" if new_score < 25 else "HIGH" if new_score < 40 else "MEDIUM" if new_score < 55 else "LOW"
+        color = SEV_COLORS[tier]
+        st.markdown(
+            f'<div style="background:#1e2940;border-left:4px solid {color};'
+            f'padding:12px;border-radius:8px;">'
+            f'<b style="color:{color}">Projected Alert: {tier}</b><br>'
+            f'Refund Rate: {new_refund:.1%} | Chargeback: {new_cb:.1%} | '
+            f'Survival Prob: {new_surv:.2%}</div>',
+            unsafe_allow_html=True
+        )
